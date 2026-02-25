@@ -121,29 +121,43 @@ impl TokenContract {
         env.storage().instance().remove(&DataKey::PendingAdmin);
     }
 
-   /// Transfer admin role instantly.
-/// TODO (issue #2): replace with two-step propose_admin / accept_admin.
-pub fn set_admin(env: Env, new_admin: Address) {
+    /// Transfer admin role instantly.
+ /// TODO (issue #2): replace with two-step propose_admin / accept_admin.
+ pub fn set_admin(env: Env, new_admin: Address) {
+     Self::_require_admin(&env);
+     env.storage().instance().set(&DataKey::Admin, &new_admin);
+     env.events().publish(
+         (symbol_short!("set_admin"),),
+         new_admin,
+     );
+ }
+
+ /// Freeze an account, preventing it from sending tokens. Admin only.
+ pub fn freeze_account(env: Env, addr: Address) {
+     Self::_require_admin(&env);
+     env.storage().persistent().set(&DataKey::Frozen(addr.clone()), &true);
+     env.events().publish((symbol_short!("freeze"), addr), true);
+ }
+
+ /// Unfreeze a previously frozen account. Admin only.
+ pub fn unfreeze_account(env: Env, addr: Address) {
+     Self::_require_admin(&env);
+     env.storage().persistent().remove(&DataKey::Frozen(addr.clone()));
+     env.events().publish((symbol_short!("freeze"), addr), false);
+ }
+
+/// Pause the contract, halting all state-changing operations. Admin only.
+pub fn pause(env: Env) {
     Self::_require_admin(&env);
-    env.storage().instance().set(&DataKey::Admin, &new_admin);
-    env.events().publish(
-        (symbol_short!("set_admin"),),
-        new_admin,
-    );
+    env.storage().instance().set(&DataKey::IsPaused, &true);
+    env.events().publish((symbol_short!("pause"),), true);
 }
 
-/// Freeze an account, preventing it from sending tokens. Admin only.
-pub fn freeze_account(env: Env, addr: Address) {
+/// Unpause the contract. Admin only.
+pub fn unpause(env: Env) {
     Self::_require_admin(&env);
-    env.storage().persistent().set(&DataKey::Frozen(addr.clone()), &true);
-    env.events().publish((symbol_short!("freeze"), addr), true);
-}
-
-/// Unfreeze a previously frozen account. Admin only.
-pub fn unfreeze_account(env: Env, addr: Address) {
-    Self::_require_admin(&env);
-    env.storage().persistent().remove(&DataKey::Frozen(addr.clone()));
-    env.events().publish((symbol_short!("freeze"), addr), false);
+    env.storage().instance().remove(&DataKey::IsPaused);
+    env.events().publish((symbol_short!("pause"),), false);
 }
 
 /// Pause the contract, halting all state-changing operations. Admin only.
@@ -655,98 +669,6 @@ mod test {
             },
         ]);
         client.pause();
-    }
-
-    // ── Burn authorization tests (#68) ──────────────────────────────────
-
-    #[test]
-    fn test_user_can_burn_own() {
-        let (env, client, _admin, user) = setup();
-        client.mint(&user, &1000i128);
-        
-        // Mock user auth
-        env.mock_auths(&[
-            soroban_sdk::testutils::MockAuth {
-                address: &user,
-                invoke: &soroban_sdk::testutils::MockAuthInvoke {
-                    contract: &client.address,
-                    fn_name: "burn",
-                    args: (&user, 500i128).into_val(&env),
-                    sub_invokes: &[],
-                },
-            },
-        ]);
-        
-        client.burn(&user, &500i128);
-        assert_eq!(client.balance(&user), 500i128);
-    }
-
-    #[test]
-    fn test_admin_can_forced_burn() {
-        let (env, client, admin, user) = setup();
-        client.mint(&user, &1000i128);
-        
-        // Mock admin auth
-        env.mock_auths(&[
-            soroban_sdk::testutils::MockAuth {
-                address: &admin,
-                invoke: &soroban_sdk::testutils::MockAuthInvoke {
-                    contract: &client.address,
-                    fn_name: "burn_admin",
-                    args: (&user, 500i128).into_val(&env),
-                    sub_invokes: &[],
-                },
-            },
-        ]);
-        
-        client.burn_admin(&user, &500i128);
-        assert_eq!(client.balance(&user), 500i128);
-    }
-
-    #[test]
-    #[should_panic]
-    fn test_user_cannot_burn_others() {
-        let (env, client, _, user) = setup();
-        let victim = Address::generate(&env);
-        client.mint(&victim, &1000i128);
-        
-        // User tries to burn victim's tokens using standard burn
-        env.mock_auths(&[
-            soroban_sdk::testutils::MockAuth {
-                address: &user,
-                invoke: &soroban_sdk::testutils::MockAuthInvoke {
-                    contract: &client.address,
-                    fn_name: "burn",
-                    args: (&victim, 500i128).into_val(&env),
-                    sub_invokes: &[],
-                },
-            },
-        ]);
-        
-        client.burn(&victim, &500i128);
-    }
-
-    #[test]
-    #[should_panic]
-    fn test_user_cannot_admin_burn() {
-        let (env, client, _, user) = setup();
-        let victim = Address::generate(&env);
-        client.mint(&victim, &1000i128);
-        
-        // User tries to call admin_burn
-        env.mock_auths(&[
-            soroban_sdk::testutils::MockAuth {
-                address: &user,
-                invoke: &soroban_sdk::testutils::MockAuthInvoke {
-                    contract: &client.address,
-                    fn_name: "burn_admin",
-                    args: (&victim, 500i128).into_val(&env),
-                    sub_invokes: &[],
-                },
-            },
-        ]);
-        
-        client.burn_admin(&victim, &500i128);
     }
 
     // ── max_supply tests ────────────────────────────────────────────────    

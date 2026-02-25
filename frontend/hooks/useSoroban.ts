@@ -14,24 +14,40 @@ export function useSoroban() {
 
   const fetchTokenInfo = useCallback(
     (contractId: string) => stellar.fetchTokenInfo(contractId, networkConfig),
-    [networkConfig]
+    [networkConfig],
   );
 
   const fetchTopHolders = useCallback(
     (contractId: string, symbol?: string, issuer?: string, limit?: number) =>
       stellar.fetchTopHolders(contractId, networkConfig, symbol, issuer, limit),
-    [networkConfig]
+    [networkConfig],
   );
 
   const fetchCurrentLedger = useCallback(
     () => stellar.fetchCurrentLedger(networkConfig),
-    [networkConfig]
+    [networkConfig],
   );
 
   const fetchVestingSchedule = useCallback(
     (vestingContractId: string, recipient: string) =>
       stellar.fetchVestingSchedule(vestingContractId, recipient, networkConfig),
-    [networkConfig]
+    [networkConfig],
+  );
+
+  const fetchSupplyBreakdown = useCallback(
+    (tokenContractId: string, vestingContractId?: string) =>
+      stellar.fetchSupplyBreakdown(
+        tokenContractId,
+        networkConfig,
+        vestingContractId,
+      ),
+    [networkConfig],
+  );
+
+  const fetchAccountBalances = useCallback(
+    (publicKey: string) =>
+      stellar.fetchAccountBalances(publicKey, networkConfig),
+    [networkConfig],
   );
 
   return useMemo(
@@ -40,6 +56,8 @@ export function useSoroban() {
       fetchTopHolders,
       fetchCurrentLedger,
       fetchVestingSchedule,
+      fetchSupplyBreakdown,
+      fetchAccountBalances,
       networkConfig,
       // Pass through formatting helpers which don't need config
       formatTokenAmount: stellar.formatTokenAmount,
@@ -50,7 +68,9 @@ export function useSoroban() {
       fetchTopHolders,
       fetchCurrentLedger,
       fetchVestingSchedule,
+      fetchSupplyBreakdown,
+      fetchAccountBalances,
       networkConfig,
-    ]
+    ],
   );
 }
