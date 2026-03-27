@@ -9,7 +9,12 @@ import {
   Flame,
   Droplets,
 } from "lucide-react";
-import { type TokenActivityInfo } from "@/lib/stellar";
+import {
+  fetchAccountOperations,
+  // truncateAddress,
+  type TokenActivityInfo,
+} from "@/lib/stellar";
+import { useNetwork } from "@/app/providers/NetworkProvider";
 import { ExplorerLink } from "@/components/ui/ExplorerLink";
 import { useSoroban } from "@/hooks/useSoroban";
 
@@ -20,6 +25,7 @@ export default function ActivityFeed({ accountId }: { accountId: string }) {
   const [loadingMore, setLoadingMore] = useState(false);
   const [nextCursor, setNextCursor] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
+  const { networkConfig } = useNetwork();
 
   // Use refs to avoid closure stale state in intervals
   const cursorRef = useRef<string | null>(null);
@@ -38,6 +44,7 @@ export default function ActivityFeed({ accountId }: { accountId: string }) {
 
         const { records, nextCursor: newCursor } = await fetchAccountOperations(
           accountId,
+          // networkConfig,
           fetchCursor ?? undefined,
           10,
         );
@@ -65,7 +72,7 @@ export default function ActivityFeed({ accountId }: { accountId: string }) {
         if (isLoadMore) setLoadingMore(false);
       }
     },
-    [accountId, fetchAccountOperations],
+    [accountId, networkConfig, fetchAccountOperations],
   );
 
   // Initial load

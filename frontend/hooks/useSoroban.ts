@@ -74,8 +74,8 @@ export function useSoroban() {
   );
 
   const submitTransaction = useCallback(
-    (signedXdr: string) => stellar.submitTransaction(signedXdr),
-    [],
+    (signedXdr: string) => stellar.submitTransaction(signedXdr, networkConfig),
+    [networkConfig],
   );
   return useMemo(
     () => ({
