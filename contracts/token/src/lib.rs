@@ -67,6 +67,7 @@ impl TokenContract {
         env.storage().instance().set(&DataKey::Name, &name);
         env.storage().instance().set(&DataKey::Symbol, &symbol);
         env.storage().instance().set(&DataKey::TotalSupply, &0i128);
+        env.storage().instance().set(&DataKey::TotalBurned, &0i128);
 
         if initial_supply > 0 {
             Self::_mint(&env, &admin, initial_supply);
@@ -97,6 +98,27 @@ impl TokenContract {
     pub fn burn_admin(env: Env, from: Address, amount: i128) {
         Self::_check_paused(&env);
         Self::_require_admin(&env);
+        assert!(amount > 0, "amount must be positive");
+        Self::_burn(&env, &from, amount);
+    }
+
+    /// Mint `amount` tokens to multiple recipients. Admin only.
+    pub fn mint_batch(env: Env, to: soroban_sdk::Vec<Address>, amounts: soroban_sdk::Vec<i128>) {
+        Self::_check_paused(&env);
+        Self::_require_admin(&env);
+        assert!(to.len() == amounts.len(), "mismatching lengths");
+        for i in 0..to.len() {
+            let recipient = to.get(i).unwrap();
+            let amount = amounts.get(i).unwrap();
+            assert!(amount > 0, "amount must be positive");
+            Self::_mint(&env, &recipient, amount);
+        }
+    }
+
+    /// Burn `amount` tokens from the caller's own balance.
+    pub fn burn_self(env: Env, from: Address, amount: i128) {
+        Self::_check_paused(&env);
+        from.require_auth();
         assert!(amount > 0, "amount must be positive");
         Self::_burn(&env, &from, amount);
     }
@@ -332,7 +354,7 @@ impl TokenContract {
             .instance()
             .get(&DataKey::TotalSupply)
             .unwrap_or(0);
-        let new_supply = supply + amount;
+        let new_supply = supply.checked_add(amount).expect("total_supply overflow");
 
         if let Some(cap) = env
             .storage()
@@ -344,7 +366,8 @@ impl TokenContract {
 
         let key = DataKey::Balance(to.clone());
         let balance: i128 = env.storage().persistent().get(&key).unwrap_or(0);
-        env.storage().persistent().set(&key, &(balance + amount));
+        let new_balance = balance.checked_add(amount).expect("balance overflow");
+        env.storage().persistent().set(&key, &new_balance);
 
         env.storage()
             .instance()
@@ -358,25 +381,32 @@ impl TokenContract {
         let key = DataKey::Balance(from.clone());
         let balance: i128 = env.storage().persistent().get(&key).unwrap_or(0);
         assert!(balance >= amount, "insufficient balance to burn");
-        env.storage().persistent().set(&key, &(balance - amount));
+        let new_balance = balance
+            .checked_sub(amount)
+            .expect("balance underflow on burn");
+        env.storage().persistent().set(&key, &new_balance);
 
         let supply: i128 = env
             .storage()
             .instance()
             .get(&DataKey::TotalSupply)
             .unwrap_or(0);
+        let new_supply = supply
+            .checked_sub(amount)
+            .expect("total_supply underflow on burn");
         env.storage()
             .instance()
-            .set(&DataKey::TotalSupply, &(supply - amount));
+            .set(&DataKey::TotalSupply, &new_supply);
 
         let burned: i128 = env
             .storage()
             .instance()
             .get(&DataKey::TotalBurned)
             .unwrap_or(0);
+        let new_total_burned = burned.checked_add(amount).expect("total_burned overflow");
         env.storage()
             .instance()
-            .set(&DataKey::TotalBurned, &(burned + amount));
+            .set(&DataKey::TotalBurned, &new_total_burned);
 
         env.events()
             .publish((symbol_short!("burn"), from.clone()), amount);
@@ -489,6 +519,50 @@ mod test {
     }
 
     #[test]
+    fn test_burn_self() {
+        let (_, client, _, user) = setup();
+        client.mint(&user, &1000i128);
+        client.burn_self(&user, &500i128);
+        assert_eq!(client.balance(&user), 500i128);
+    }
+
+    #[test]
+    fn test_mint_batch() {
+        let (env, client, _, _) = setup();
+        let u1 = Address::generate(&env);
+        let u2 = Address::generate(&env);
+
+        let mut to = soroban_sdk::Vec::new(&env);
+        to.push_back(u1.clone());
+        to.push_back(u2.clone());
+
+        let mut amounts = soroban_sdk::Vec::new(&env);
+        amounts.push_back(100i128);
+        amounts.push_back(200i128);
+
+        client.mint_batch(&to, &amounts);
+
+        assert_eq!(client.balance(&u1), 100i128);
+        assert_eq!(client.balance(&u2), 200i128);
+    }
+
+    #[test]
+    #[should_panic(expected = "mismatching lengths")]
+    fn test_mint_batch_len_mismatch() {
+        let (env, client, _, _) = setup();
+        let u1 = Address::generate(&env);
+
+        let mut to = soroban_sdk::Vec::new(&env);
+        to.push_back(u1);
+
+        let mut amounts = soroban_sdk::Vec::new(&env);
+        amounts.push_back(100i128);
+        amounts.push_back(200i128);
+
+        client.mint_batch(&to, &amounts);
+    }
+
+    #[test]
     fn test_total_burned_starts_at_zero() {
         let (_, client, _, _) = setup();
         assert_eq!(client.total_burned(), 0i128);
@@ -510,6 +584,21 @@ mod test {
     }
 
     #[test]
+    fn test_burn_admin_updates_total_burned() {
+        let (_, client, admin, user) = setup();
+        client.transfer(&admin, &user, &100_0000000i128);
+
+        client.burn_admin(&user, &40_0000000i128);
+
+        assert_eq!(client.balance(&user), 60_0000000i128);
+        assert_eq!(client.total_burned(), 40_0000000i128);
+        assert_eq!(
+            client.total_supply(),
+            1_000_000_0000000i128 - 40_0000000i128
+        );
+    }
+
+    #[test]
     fn test_burn_updates_total_burned_and_total_supply_each_time() {
         let (_, client, admin, _) = setup();
 
@@ -525,6 +614,20 @@ mod test {
         assert_eq!(
             client.total_supply(),
             1_000_000_0000000i128 - 350_0000000i128
+        );
+    }
+
+    #[test]
+    fn test_mint_does_not_change_total_burned() {
+        let (_, client, admin, user) = setup();
+
+        client.burn(&admin, &100_0000000i128);
+        client.mint(&user, &25_0000000i128);
+
+        assert_eq!(client.total_burned(), 100_0000000i128);
+        assert_eq!(
+            client.total_supply(),
+            1_000_000_0000000i128 - 100_0000000i128 + 25_0000000i128
         );
     }
 
