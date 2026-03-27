@@ -1,3 +1,5 @@
+"use client";
+
 import { useEffect, useState, useCallback, useRef } from "react";
 import {
   // ArrowUpRight,
@@ -14,8 +16,10 @@ import {
 } from "@/lib/stellar";
 import { useNetwork } from "@/app/providers/NetworkProvider";
 import { ExplorerLink } from "@/components/ui/ExplorerLink";
+import { useSoroban } from "@/hooks/useSoroban";
 
 export default function ActivityFeed({ accountId }: { accountId: string }) {
+  const { fetchAccountOperations } = useSoroban();
   const [operations, setOperations] = useState<TokenActivityInfo[]>([]);
   const [loading, setLoading] = useState(true);
   const [loadingMore, setLoadingMore] = useState(false);
@@ -40,7 +44,7 @@ export default function ActivityFeed({ accountId }: { accountId: string }) {
 
         const { records, nextCursor: newCursor } = await fetchAccountOperations(
           accountId,
-          networkConfig,
+          // networkConfig,
           fetchCursor ?? undefined,
           10,
         );
@@ -68,7 +72,7 @@ export default function ActivityFeed({ accountId }: { accountId: string }) {
         if (isLoadMore) setLoadingMore(false);
       }
     },
-    [accountId, networkConfig],
+    [accountId, networkConfig, fetchAccountOperations],
   );
 
   // Initial load
