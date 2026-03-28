@@ -66,7 +66,7 @@ function FriendbotBanner({ threshold = 100 }: { threshold?: number }) {
     useEffect(() => {
         let cancelled = false;
         if (!publicKey) return;
-        const server = new StellarSdk.Server(networkConfig.horizonUrl);
+        const server = new StellarSdk.Horizon.Server(networkConfig.horizonUrl);
 
         (async function fetchBalance() {
             try {
@@ -94,7 +94,7 @@ function FriendbotBanner({ threshold = 100 }: { threshold?: number }) {
             const res = await fetch(`https://friendbot.stellar.org/?addr=${encodeURIComponent(publicKey)}`);
             if (!res.ok) throw new Error("Friendbot request failed");
             // refetch balance
-            const server = new StellarSdk.Server(networkConfig.horizonUrl);
+            const server = new StellarSdk.Horizon.Server(networkConfig.horizonUrl);
             const account = await server.accounts().accountId(publicKey).call();
             const native = account.balances.find((b: any) => b.asset_type === "native");
             setBalance(native ? Number(native.balance) : 0);

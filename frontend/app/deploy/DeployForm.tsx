@@ -12,7 +12,7 @@ import { StepSupply } from "./steps/StepSupply";
 import { StepAdmin } from "./steps/StepAdmin";
 import { StepReview } from "./steps/StepReview";
 import { useTransactionSimulator } from "@/hooks/useTransactionSimulator";
-import { useWallet } from "@/hooks/useWallet";
+import { useWallet } from "@/app/hooks/useWallet";
 import { savePendingMetadata } from "./utils/metadata";
 import { ArrowLeft, ArrowRight, Rocket } from "lucide-react";
 
