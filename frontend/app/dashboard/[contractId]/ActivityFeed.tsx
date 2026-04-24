@@ -13,9 +13,11 @@ import {
 } from "@/lib/stellar";
 import { ExplorerLink } from "@/components/ui/ExplorerLink";
 import { useSoroban } from "@/hooks/useSoroban";
+import { useContractEvents } from "@/hooks/useContractEvents";
 
 export default function ActivityFeed({ accountId }: { accountId: string }) {
   const { fetchAccountOperations } = useSoroban();
+  const { events: liveEvents } = useContractEvents(accountId, { intervalMs: 10000 });
   const [operations, setOperations] = useState<TokenActivityInfo[]>([]);
   const [loading, setLoading] = useState(true);
   const [loadingMore, setLoadingMore] = useState(false);
@@ -75,16 +77,17 @@ export default function ActivityFeed({ accountId }: { accountId: string }) {
     performFetch();
   }, [performFetch]);
 
-  // Auto-refresh every 30 seconds
+  // Auto-refresh using live events from the polling hook
   useEffect(() => {
-    const interval = setInterval(() => {
-      // Only auto-refresh if we haven't loaded more pages (to not mess up pagination)
-      if (cursorRef.current === null || operations.length <= 10) {
-        performFetch(false, true);
-      }
-    }, 30000);
-    return () => clearInterval(interval);
-  }, [performFetch, operations.length]);
+    if (liveEvents.length > 0) {
+      setOperations((prev: TokenActivityInfo[]) => {
+        const existingIds = new Set(prev.map((op: TokenActivityInfo) => op.id));
+        const newOps = liveEvents.filter((op: TokenActivityInfo) => !existingIds.has(op.id));
+        if (newOps.length === 0) return prev;
+        return [...newOps, ...prev];
+      });
+    }
+  }, [liveEvents]);
 
   if (loading) {
     return (

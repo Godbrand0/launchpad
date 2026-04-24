@@ -212,7 +212,7 @@ function encodeTopicSymbol(symbol: string): string {
   return StellarSdk.nativeToScVal(symbol, { type: "symbol" }).toXDR("base64");
 }
 
-function toScVal(value: unknown): StellarSdk.xdr.ScVal | null {
+export function toScVal(value: unknown): StellarSdk.xdr.ScVal | null {
   if (!value) return null;
   if (typeof value === "string") {
     try {
@@ -233,14 +233,14 @@ function toScVal(value: unknown): StellarSdk.xdr.ScVal | null {
   return null;
 }
 
-function readEventTopics(event: unknown): unknown[] {
+export function readEventTopics(event: unknown): unknown[] {
   const e = event as { topic?: unknown; topics?: unknown };
   if (Array.isArray(e.topic)) return e.topic;
   if (Array.isArray(e.topics)) return e.topics;
   return [];
 }
 
-function readEventLedger(event: unknown): number {
+export function readEventLedger(event: unknown): number {
   const e = event as {
     ledger?: unknown;
     ledger_seq?: unknown;
@@ -252,19 +252,19 @@ function readEventLedger(event: unknown): number {
   return typeof val === "number" ? val : Number(val) || 0;
 }
 
-function readEventId(event: unknown, fallback: string): string {
+export function readEventId(event: unknown, fallback: string): string {
   const e = event as { id?: unknown; event_id?: unknown; eventId?: unknown };
   const val = e.id ?? e.event_id ?? e.eventId;
   return typeof val === "string" ? val : fallback;
 }
 
-function readEventTxHash(event: unknown): string {
+export function readEventTxHash(event: unknown): string {
   const e = event as { tx_hash?: unknown; txHash?: unknown; hash?: unknown };
   const val = e.tx_hash ?? e.txHash ?? e.hash;
   return typeof val === "string" ? val : "";
 }
 
-function readEventTimestamp(event: unknown): string {
+export function readEventTimestamp(event: unknown): string {
   const e = event as {
     timestamp?: unknown;
     ledger_timestamp?: unknown;
@@ -284,7 +284,7 @@ function readEventTimestamp(event: unknown): string {
   return new Date(0).toISOString();
 }
 
-function readEventTimestampNumber(event: unknown): number {
+export function readEventTimestampNumber(event: unknown): number {
   const iso = readEventTimestamp(event);
   const ms = Date.parse(iso);
   return Number.isNaN(ms) ? 0 : Math.floor(ms / 1000);
@@ -359,7 +359,7 @@ export async function fetchApprovedSpendersFromEvents(params: {
 }
 
 /** Decode an ScVal string (symbol or string type). */
-function decodeString(val: StellarSdk.xdr.ScVal): string {
+export function decodeString(val: StellarSdk.xdr.ScVal): string {
   switch (val.switch()) {
     case StellarSdk.xdr.ScValType.scvSymbol():
       return val.sym().toString();
@@ -371,7 +371,7 @@ function decodeString(val: StellarSdk.xdr.ScVal): string {
 }
 
 /** Decode an ScVal 128-bit integer to a bigint string. */
-function decodeI128(val: StellarSdk.xdr.ScVal): string {
+export function decodeI128(val: StellarSdk.xdr.ScVal): string {
   const parts = val.i128();
   const hi = BigInt(parts.hi().toString());
   const lo = BigInt(parts.lo().toString());
@@ -384,7 +384,7 @@ function decodeU32(val: StellarSdk.xdr.ScVal): number {
 }
 
 /** Decode an ScVal address to a string. */
-function decodeAddress(val: StellarSdk.xdr.ScVal): string {
+export function decodeAddress(val: StellarSdk.xdr.ScVal): string {
   return StellarSdk.Address.fromScVal(val).toString();
 }
 
