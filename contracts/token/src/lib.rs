@@ -1,6 +1,8 @@
 #![no_std]
 
-use soroban_sdk::{contract, contractimpl, contracttype, symbol_short, Address, Env, String};
+use soroban_sdk::{
+    contract, contractimpl, contracttype, symbol_short, Address, BytesN, Env, String,
+};
 
 // ---------------------------------------------------------------------------
 // Storage keys
@@ -88,6 +90,13 @@ impl TokenContract {
         Self::_require_admin(&env);
         assert!(amount > 0, "amount must be positive");
         Self::_mint(&env, &to, amount);
+
+        // Extend TTL for the balance key to prevent archiving
+        let ttl_ledgers = 52 * 7 * 24 * 60 / 5; // ~52 weeks (assuming 5-second ledgers)
+        let key = DataKey::Balance(to);
+        env.storage()
+            .persistent()
+            .extend_ttl(&key, ttl_ledgers, ttl_ledgers);
     }
 
     /// Burn `amount` tokens from `from`. Owner only (standard burn).
@@ -221,6 +230,20 @@ impl TokenContract {
         env.storage().instance().set(&DataKey::ContractUri, &uri);
     }
 
+    /// Upgrade this contract's WASM code hash in place. Admin only.
+    ///
+    /// Security note: this preserves existing storage and contract address, so
+    /// new WASM must remain storage-compatible with previous deployments.
+    pub fn upgrade(env: Env, new_wasm_hash: BytesN<32>) {
+        Self::_require_admin(&env);
+        assert!(
+            new_wasm_hash != BytesN::from_array(&env, &[0; 32]),
+            "invalid wasm hash"
+        );
+        env.deployer().update_current_contract_wasm(new_wasm_hash);
+        env.events().publish((symbol_short!("upgrade"),), true);
+    }
+
     // ── Token operations ────────────────────────────────────────────────
 
     /// Transfer `amount` from `from` to `to`. Caller must be `from`.
@@ -231,21 +254,49 @@ impl TokenContract {
         assert!(!Self::_is_frozen(&env, &from), "account is frozen");
 
         Self::_transfer(&env, &from, &to, amount);
+
+        // Extend TTL for both balance keys to prevent archiving
+        // Use a standard TTL extension (e.g., 52 weeks in ledgers)
+        let ttl_ledgers = 52 * 7 * 24 * 60 / 5; // ~52 weeks (assuming 5-second ledgers)
+        let from_key = DataKey::Balance(from);
+        let to_key = DataKey::Balance(to);
+        env.storage()
+            .persistent()
+            .extend_ttl(&from_key, ttl_ledgers, ttl_ledgers);
+        env.storage()
+            .persistent()
+            .extend_ttl(&to_key, ttl_ledgers, ttl_ledgers);
     }
 
     /// Approve `spender` to spend up to `amount` on behalf of `from`.
+    /// The allowance will be extended with TTL up to the specified expiration_ledger.
+    /// If expiration_ledger is 0, the allowance will use a default TTL extension.
     pub fn approve(
         env: Env,
         from: Address,
         spender: Address,
         amount: i128,
-        _expiration_ledger: u32,
+        expiration_ledger: u32,
     ) {
         from.require_auth();
         assert!(amount >= 0, "amount must be non-negative");
 
         let key = DataKey::Allowance(from.clone(), spender.clone());
         env.storage().persistent().set(&key, &amount);
+
+        // Extend TTL for the allowance key
+        // If expiration_ledger is 0 or in the past, use default TTL (52 weeks)
+        let current_ledger = env.ledger().sequence();
+        let ttl_ledgers = if expiration_ledger > current_ledger {
+            expiration_ledger - current_ledger
+        } else {
+            // Default TTL: 52 weeks in ledgers (assuming 5-second ledgers)
+            52 * 7 * 24 * 60 / 5
+        };
+
+        env.storage()
+            .persistent()
+            .extend_ttl(&key, ttl_ledgers, ttl_ledgers);
 
         env.events()
             .publish((symbol_short!("approve"), from, spender), amount);
@@ -265,6 +316,17 @@ impl TokenContract {
         env.storage().persistent().set(&key, &(allowance - amount));
 
         Self::_transfer(&env, &from, &to, amount);
+
+        // Extend TTL for balance keys to prevent archiving
+        let ttl_ledgers = 52 * 7 * 24 * 60 / 5; // ~52 weeks (assuming 5-second ledgers)
+        let from_key = DataKey::Balance(from);
+        let to_key = DataKey::Balance(to);
+        env.storage()
+            .persistent()
+            .extend_ttl(&from_key, ttl_ledgers, ttl_ledgers);
+        env.storage()
+            .persistent()
+            .extend_ttl(&to_key, ttl_ledgers, ttl_ledgers);
     }
 
     // ── Read-only getters ───────────────────────────────────────────────
@@ -1175,5 +1237,46 @@ mod test {
     fn test_contract_uri_not_set() {
         let (_, client, _, _) = setup();
         client.contract_uri();
+    }
+
+    #[test]
+    #[should_panic(expected = "invalid wasm hash")]
+    fn test_upgrade_rejects_zero_hash() {
+        let (env, client, _, _) = setup();
+        let zero_hash = BytesN::from_array(&env, &[0; 32]);
+        client.upgrade(&zero_hash);
+    }
+
+    #[test]
+    #[should_panic]
+    fn test_non_admin_cannot_upgrade() {
+        let env = Env::default();
+        let contract_id = env.register_contract(None, TokenContract);
+        let client = TokenContractClient::new(&env, &contract_id);
+        let admin = Address::generate(&env);
+        let user = Address::generate(&env);
+
+        env.mock_all_auths();
+        client.initialize(
+            &admin,
+            &7u32,
+            &String::from_str(&env, "TestToken"),
+            &String::from_str(&env, "TST"),
+            &0i128,
+            &None,
+        );
+
+        let non_zero_hash = BytesN::from_array(&env, &[1; 32]);
+        env.mock_auths(&[soroban_sdk::testutils::MockAuth {
+            address: &user,
+            invoke: &soroban_sdk::testutils::MockAuthInvoke {
+                contract: &contract_id,
+                fn_name: "upgrade",
+                args: (non_zero_hash.clone(),).into_val(&env),
+                sub_invokes: &[],
+            },
+        }]);
+
+        client.upgrade(&non_zero_hash);
     }
 }

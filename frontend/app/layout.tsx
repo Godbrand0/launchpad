@@ -5,12 +5,12 @@ import { WalletProvider } from "./providers/WalletProvider";
 import { SettingsProvider } from "./providers/SettingsProvider";
 import { NetworkProvider } from "./providers/NetworkProvider";
 import { AccessibilityProvider } from "./providers/AccessibilityProvider";
+import { LocaleProvider } from "./providers/LocaleProvider";
 import { I18nProvider } from "./providers/I18nProvider";
 import { ToastProvider } from "./providers/ToastProvider";
 import { ErrorBoundary } from "./components/ErrorBoundary";
 import { Navbar } from "./components/Navbar";
 import { MainnetWarning } from "./components/MainnetWarning";
-import messages from "../messages/en.json";
 
 const geistSans = Geist({
   variable: "--font-geist-sans",
@@ -49,8 +49,9 @@ export default function RootLayout({
         <a href="#main-content" className="skip-link">
           Skip to main content
         </a>
-        <ToastProvider>
-          <I18nProvider locale="en" messages={messages}>
+        <LocaleProvider>
+            <ToastProvider>
+          <I18nProvider>
             <NetworkProvider>
               <SettingsProvider>
                 <WalletProvider>
@@ -83,6 +84,7 @@ export default function RootLayout({
             </NetworkProvider>
           </I18nProvider>
         </ToastProvider>
+        </LocaleProvider>
       </body>
     </html>
   );
